@@ -16,4 +16,5 @@ services:
     depends_on: ["db"]
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/eldar
-volumes: {pgdata:}
+volumes:
+  pgdata:
