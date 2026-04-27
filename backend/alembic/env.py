@@ -12,6 +12,7 @@ from app.models.base import Base
 import app.models.user  # noqa
 import app.models.lab    # noqa
 import app.models.booking  # noqa
+import app.models.schedule  # noqa
 
 target_metadata = Base.metadata
 
