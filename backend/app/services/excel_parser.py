@@ -1,22 +1,68 @@
 import pandas as pd
+import re
+from typing import List, Dict, Tuple
+
 HEADER_RULES = {
-    "course_name": ["课程名称", "课程"], "teacher_name": ["教师"],
-    "class_names": ["班级"], "week_range": ["周次"],
-    "time_slots": ["节次"], "location": ["地点"]
+    "course_name": ["课程名称", "课程名", "课程"],
+    "teacher_name": ["教师", "任课教师"],
+    "class_names": ["班级", "授课班级"],
+    "week_range": ["周次", "教学周"],
+    "time_slots": ["节次", "时间"],
+    "location": ["地点", "教室", "实验室"]
 }
-def detect_headers(row):
+
+def detect_headers(row) -> Dict[str, int]:
     mapping = {}
     for i, val in enumerate(row):
+        val_str = str(val).strip()
         for field, kws in HEADER_RULES.items():
-            if any(k in str(val) for k in kws):
+            if any(k in val_str for k in kws):
                 mapping[field] = i
                 break
     return mapping
-def parse_excel(df):
-    # 1. Remove header row
-    data = df.iloc[1:].copy()
-    # 2. Ffill merged cells
-    if 1 in data.columns: data[1] = data[1].ffill()
-    # 3. Drop empty
-    data = data.dropna(how='all')
-    return data
+
+def parse_time_slot(raw: str) -> Dict[str, int]:
+    raw = str(raw)
+    # 策略 1: 提取数字 "40304" -> [4,3,4]
+    digits = [int(d) for d in re.findall(r'\d+', raw)]
+    if len(digits) >= 3:
+        return {"day": digits[0], "start": digits[1], "end": digits[2]}
+    # 策略 2: 中文 "周4 3-4"
+    match = re.search(r'周\s*(\d).*?(\d+)-(\d+)', raw)
+    if match:
+        return {"day": int(match.group(1)), "start": int(match.group(2)), "end": int(match.group(3))}
+    return {"day": 1, "start": 1, "end": 1} # Fallback
+
+def parse_excel(file_path: str) -> Tuple[List[Dict], List[str]]:
+    try:
+        df = pd.read_excel(file_path)
+        if df.empty: return [], ["Empty file"]
+        
+        # 1. Detect headers
+        header_map = detect_headers(df.iloc[0])
+        if not header_map: return [], ["Header detection failed"]
+        
+        # 2. Clean data
+        data = df.iloc[1:].copy()
+        # Ffill merged cells
+        if 1 in data.columns: data[1] = data[1].ffill()
+        # Drop '合计'
+        data = data[~data[0].astype(str).str.contains('合计', na=False)]
+        
+        records = []
+        warnings = []
+        for idx, row in data.iterrows():
+            try:
+                time_info = parse_time_slot(row.get(header_map.get('time_slots', -1), ''))
+                records.append({
+                    "course_name": row.get(header_map.get('course_name', -1), ''),
+                    "teacher": row.get(header_map.get('teacher_name', -1), ''),
+                    "classes": row.get(header_map.get('class_names', -1), ''),
+                    "time": time_info,
+                    "location": row.get(header_map.get('location', -1), '')
+                })
+            except Exception as e:
+                warnings.append(f"Row {idx} error: {str(e)}")
+        return records, warnings
+    except Exception as e:
+        return [], [f"File read error: {str(e)}"]
