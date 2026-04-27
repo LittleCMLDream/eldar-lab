@@ -22,31 +22,43 @@ def detect_headers(row) -> Dict[str, int]:
     return mapping
 
 def parse_time_slot(raw: str) -> Dict[str, int]:
-    raw = str(raw)
-    # 策略 1: 提取数字 "40304" -> [4,3,4]
+    raw = str(raw).strip()
+    
+    # 策略 1: 连续数字格式，如 "40304" -> 4-03-04 -> 周4 第3-4节
+    # 或者 "30102" -> 3-01-02 -> 周3 第1-2节
+    # 假设格式: [Day][Start][End] 但可能有 0 填充
+    match = re.match(r'^(\d)(\d{2})(\d{2})$', raw)
+    if match:
+        return {
+            "day": int(match.group(1)),
+            "start": int(match.group(2)),
+            "end": int(match.group(3))
+        }
+        
+    # 策略 2: 提取所有数字 (备选)
     digits = [int(d) for d in re.findall(r'\d+', raw)]
     if len(digits) >= 3:
+        # 尝试解析为 [Day, Start, End]
         return {"day": digits[0], "start": digits[1], "end": digits[2]}
-    # 策略 2: 中文 "周4 3-4"
+        
+    # 策略 3: 中文格式 "周4 3-4节"
     match = re.search(r'周\s*(\d).*?(\d+)-(\d+)', raw)
     if match:
         return {"day": int(match.group(1)), "start": int(match.group(2)), "end": int(match.group(3))}
-    return {"day": 1, "start": 1, "end": 1} # Fallback
+    
+    # Fallback
+    return {"day": 1, "start": 1, "end": 1}
 
 def parse_excel(file_path: str) -> Tuple[List[Dict], List[str]]:
     try:
         df = pd.read_excel(file_path)
         if df.empty: return [], ["Empty file"]
         
-        # 1. Detect headers
         header_map = detect_headers(df.iloc[0])
         if not header_map: return [], ["Header detection failed"]
         
-        # 2. Clean data
         data = df.iloc[1:].copy()
-        # Ffill merged cells
         if 1 in data.columns: data[1] = data[1].ffill()
-        # Drop '合计'
         data = data[~data[0].astype(str).str.contains('合计', na=False)]
         
         records = []
